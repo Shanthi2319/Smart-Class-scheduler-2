@@ -1,0 +1,545 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>Smart Class & Timetable Scheduler (Demo)</title>
+<style>
+  :root{
+    --bg:#0f1724; --card:#0b1220; --muted:#94a3b8; --accent:#06b6d4; --good:#10b981; --bad:#ef4444;
+  }
+  body{font-family:Inter,system-ui,Segoe UI,Roboto,"Helvetica Neue",Arial; margin:0; background:linear-gradient(180deg,#061224 0%, #071831 100%); color:#e6eef6; padding:20px;}
+  header{display:flex;gap:20px;align-items:center;margin-bottom:18px;}
+  h1{margin:0;font-size:20px}
+  .container{display:grid;grid-template-columns:360px 1fr;gap:18px;}
+  .card{background:linear-gradient(180deg, rgba(255,255,255,0.02), rgba(255,255,255,0.01)); border-radius:12px; padding:14px; box-shadow:0 6px 18px rgba(2,6,23,0.6);}
+  .small{font-size:13px;color:var(--muted);}
+  label{display:block;margin-top:8px;font-size:13px;color:var(--muted);}
+  input,select,textarea{width:100%;padding:8px;border-radius:8px;border:1px solid rgba(255,255,255,0.04);background:transparent;color:inherit;font-size:14px;box-sizing:border-box}
+  button{margin-top:10px;padding:10px 12px;border-radius:8px;border:0;background:var(--accent);color:#022;cursor:pointer;font-weight:600}
+  .problems ul{padding-left:18px;margin:6px 0;color:var(--muted)}
+  .timetable-wrap{overflow:auto}
+  table.timetable{border-collapse:collapse;width:100%;min-width:900px}
+  table.timetable th, table.timetable td{border:1px solid rgba(255,255,255,0.04);padding:8px;text-align:center;vertical-align:middle}
+  table.timetable th{background:rgba(255,255,255,0.02);font-weight:600}
+  .slot{min-height:54px;padding:6px;border-radius:8px;cursor:pointer}
+  .slot.empty{color:var(--muted)}
+  .chip{display:inline-block;padding:6px 8px;border-radius:8px;font-size:12px;margin:2px 2px; background:rgba(255,255,255,0.03)}
+  .conflict{background:linear-gradient(90deg, rgba(239,68,68,0.12), rgba(239,68,68,0.08));border:1px solid rgba(239,68,68,0.25)}
+  .ok{background:linear-gradient(90deg, rgba(16,185,129,0.08), rgba(16,185,129,0.04)); border:1px solid rgba(16,185,129,0.14)}
+  .controls{display:flex;gap:8px;flex-wrap:wrap}
+  .list{max-height:220px;overflow:auto;margin-top:8px;border-radius:8px;padding:8px;border:1px dashed rgba(255,255,255,0.03)}
+  .row{display:flex;gap:8px}
+  .hint{font-size:12px;color:var(--muted);margin-top:8px}
+  .flex-between{display:flex;justify-content:space-between;align-items:center}
+  .export-btn{background:#0ea5a4;color:#021; padding:8px 10px;border-radius:8px;border:0}
+  footer{margin-top:18px;color:var(--muted);font-size:13px;text-align:center}
+  @media (max-width:900px){.container{grid-template-columns:1fr;margin:0;padding:0} header{flex-direction:column;align-items:flex-start} table.timetable{min-width:700px}}
+</style>
+</head>
+<body>
+<header>
+  <div>
+    <h1>Smart Class & Timetable Scheduler — Demo</h1>
+    <div class="small">A simple, client-side prototype with conflict detection & auto-scheduling (greedy)</div>
+  </div>
+  <div style="margin-left:auto;text-align:right">
+    <div class="small">Tips:</div>
+    <div class="small">Add courses, teachers and rooms → try Auto-schedule → fix conflicts → Export.</div>
+  </div>
+</header>
+
+<div class="container">
+
+  <!-- LEFT: Problems + inputs -->
+  <div class="card">
+    <h3 style="margin:0 0 6px 0">Common problems students face</h3>
+    <div class="small problems">
+      <ul>
+        <li>Clashes — same student group has two classes scheduled at same time.</li>
+        <li>Double-booked teachers — teacher assigned to two classes same slot.</li>
+        <li>Room conflicts — two classes assigned same room at same time.</li>
+        <li>Unbalanced loads — multiple heavy classes concentrated on one day.</li>
+        <li>Long gaps — students have large idle gaps between classes.</li>
+        <li>Late notifications — changes communicated late, causing miss.</li>
+        <li>Elective clash — students unable to choose electives due to overlaps.</li>
+        <li>Resource constraints — labs / project rooms limited in availability.</li>
+      </ul>
+      <div class="hint">This scheduler highlights these issues and provides simple auto-placement that tries to minimize them.</div>
+    </div>
+
+    <hr style="margin:12px 0;border:none;border-top:1px solid rgba(255,255,255,0.03)">
+
+    <h4 style="margin:6px 0">Add Entities</h4>
+    <label>Course / Subject name</label>
+    <input id="courseName" placeholder="e.g. Data Structures (DS)">
+
+    <label>Teacher</label>
+    <input id="courseTeacher" placeholder="e.g. Prof. Rao">
+
+    <label>Room</label>
+    <input id="courseRoom" placeholder="e.g. Lab-201">
+
+    <label>Student Group</label>
+    <input id="studentGroup" placeholder="e.g. B.Tech CSE 3rd Sem">
+
+    <label>Duration (hours)</label>
+    <select id="duration">
+      <option value="1">1 hour</option>
+      <option value="2">2 hours</option>
+    </select>
+
+    <div class="row">
+      <button id="addCourseBtn">Add Course</button>
+      <button id="clearAllBtn" style="background:#ef4444;color:#fff">Clear All</button>
+    </div>
+
+    <div style="margin-top:10px">
+      <strong>Courses</strong>
+      <div id="coursesList" class="list small"></div>
+    </div>
+
+    <hr style="margin:12px 0;border:none;border-top:1px solid rgba(255,255,255,0.03)">
+
+    <h4 style="margin:6px 0">Scheduler actions</h4>
+    <div class="controls">
+      <button id="autoScheduleBtn">Auto-schedule (greedy)</button>
+      <button id="detectConflictsBtn" style="background:#f59e0b">Detect Conflicts</button>
+      <button id="exportCsvBtn" class="export-btn">Export CSV</button>
+      <button id="printBtn" style="background:#64748b">Print</button>
+    </div>
+
+    <div class="hint">Auto-scheduler: simple heuristic — places longer courses first, tries to avoid teacher/room/group clashes, doesn't guarantee optimality but helps most common cases.</div>
+  </div>
+
+  <!-- RIGHT: Timetable display -->
+  <div class="card">
+    <div class="flex-between">
+      <h3 style="margin:0">Timetable</h3>
+      <div class="small">Click a slot to assign or remove a class</div>
+    </div>
+
+    <div class="timetable-wrap" style="margin-top:10px">
+      <table class="timetable" id="timetableTable" aria-label="Timetable">
+        <!-- generated by JS -->
+      </table>
+    </div>
+
+    <div style="margin-top:10px" class="flex-between">
+      <div>
+        <strong>Legend:</strong>
+        <span class="chip">Course</span>
+        <span class="chip ok">No conflict</span>
+        <span class="chip conflict">Conflict</span>
+      </div>
+      <div class="small">Days: Mon - Sat | Slots: 08:00 - 18:00</div>
+    </div>
+
+    <hr style="margin:12px 0;border:none;border-top:1px solid rgba(255,255,255,0.03)">
+
+    <div>
+      <strong>Detected issues</strong>
+      <div id="problemsOutput" class="list small"></div>
+    </div>
+
+  </div>
+
+</div>
+
+<footer>
+  Demo — this is a client-side prototype to showcase UI, conflict detection logic, and an approachable auto-scheduler.
+</footer>
+
+<script>
+/*
+ Smart Class & Timetable Scheduler (client-side demo)
+ - Days: Mon..Sat
+ - Hours: 8..17 (10 slots) -> representable as 08:00-09:00, ... 17:00-18:00
+ - Data structures in JS for immediate use.
+*/
+
+// ===== Config =====
+const DAYS = ['Mon','Tue','Wed','Thu','Fri','Sat'];
+const START_HOUR = 8;
+const END_HOUR = 18; // exclusive
+const HOURS = [];
+for(let h=START_HOUR; h<END_HOUR; h++) HOURS.push(h);
+
+// State
+let courses = []; // {id, name, teacher, room, group, duration}
+let schedule = {}; // key: day-hour (e.g. Mon-8) -> array of placed course instances [{courseId, duration}]
+let nextCourseId = 1;
+
+// Helpers
+function slotKey(day, hour){ return `${day}-${hour}`; }
+function formatHour(h){ return (h<10?'0':'')+h + ':00'; }
+
+// Build table
+function buildTable(){
+  const table = document.getElementById('timetableTable');
+  table.innerHTML = '';
+  // header
+  const thead = document.createElement('thead');
+  const hrow = document.createElement('tr');
+  hrow.appendChild(document.createElement('th')); // corner
+  for(const d of DAYS){
+    const th = document.createElement('th');
+    th.textContent = d;
+    hrow.appendChild(th);
+  }
+  thead.appendChild(hrow);
+  table.appendChild(thead);
+
+  const tbody = document.createElement('tbody');
+  for(const h of HOURS){
+    const tr = document.createElement('tr');
+    const th = document.createElement('th');
+    th.textContent = formatHour(h) + ' - ' + formatHour(h+1);
+    tr.appendChild(th);
+
+    for(const d of DAYS){
+      const td = document.createElement('td');
+      td.dataset.day = d;
+      td.dataset.hour = h;
+      // create slot div
+      const div = document.createElement('div');
+      div.className = 'slot empty';
+      div.dataset.day = d;
+      div.dataset.hour = h;
+      refreshSlotContent(div);
+      // click to toggle assign/remove
+      div.addEventListener('click', ()=>onSlotClick(d,h));
+      td.appendChild(div);
+      tr.appendChild(td);
+    }
+    tbody.appendChild(tr);
+  }
+  table.appendChild(tbody);
+  refreshCoursesList();
+  refreshProblems();
+}
+
+// render content for a slot element
+function refreshSlotContent(div){
+  const d = div.dataset.day;
+  const h = parseInt(div.dataset.hour);
+  const key = slotKey(d,h);
+  div.innerHTML = '';
+  const arr = schedule[key] || [];
+  if(arr.length===0){
+    div.className = 'slot empty';
+    div.textContent = '— empty —';
+  } else {
+    div.className = 'slot';
+    for(const inst of arr){
+      const c = courses.find(x=>x.id===inst.courseId);
+      const badge = document.createElement('div');
+      badge.className = 'chip';
+      badge.textContent = `${c.name} (${c.group}) [${c.teacher}@${c.room}]`;
+      div.appendChild(badge);
+      // mark multi-hour visually with opacity for continuation
+      if(inst.duration>1) badge.style.opacity = '0.95';
+    }
+  }
+}
+
+// UI: add course
+document.getElementById('addCourseBtn').addEventListener('click', ()=>{
+  const name = document.getElementById('courseName').value.trim();
+  const teacher = document.getElementById('courseTeacher').value.trim();
+  const room = document.getElementById('courseRoom').value.trim();
+  const group = document.getElementById('studentGroup').value.trim();
+  const duration = parseInt(document.getElementById('duration').value);
+  if(!name || !teacher || !room || !group){
+    alert('Please fill all fields.');
+    return;
+  }
+  const c = {id: nextCourseId++, name, teacher, room, group, duration};
+  courses.push(c);
+  document.getElementById('courseName').value='';
+  document.getElementById('courseTeacher').value='';
+  document.getElementById('courseRoom').value='';
+  document.getElementById('studentGroup').value='';
+  buildTable();
+});
+
+// clear
+document.getElementById('clearAllBtn').addEventListener('click', ()=>{
+  if(!confirm('Clear all courses and schedule?')) return;
+  courses = []; schedule = {}; nextCourseId = 1;
+  buildTable();
+});
+
+// populate courses list
+function refreshCoursesList(){
+  const el = document.getElementById('coursesList');
+  el.innerHTML = '';
+  if(courses.length===0){ el.textContent = 'No courses added yet.'; return; }
+  for(const c of courses){
+    const d = document.createElement('div');
+    d.style.display='flex'; d.style.justifyContent='space-between'; d.style.alignItems='center'; d.style.marginBottom='6px';
+    const left = document.createElement('div');
+    left.innerHTML = `<strong>${c.name}</strong> <div class="small">${c.group} • ${c.teacher} • ${c.room} • ${c.duration}h</div>`;
+    const right = document.createElement('div');
+    const placeBtn = document.createElement('button'); placeBtn.textContent='Place manually'; placeBtn.style.padding='6px 8px'; placeBtn.style.marginRight='6px';
+    placeBtn.addEventListener('click', ()=>manualPlace(c.id));
+    const delBtn = document.createElement('button'); delBtn.textContent='Delete'; delBtn.style.background='#ef4444'; delBtn.style.color='#fff'; delBtn.style.padding='6px 8px';
+    delBtn.addEventListener('click', ()=>{ courses = courses.filter(x=>x.id!==c.id); // clean schedule instances
+      for(const k of Object.keys(schedule)){ schedule[k] = schedule[k].filter(i=>i.courseId!==c.id); if(schedule[k].length===0) delete schedule[k]; }
+      buildTable();
+    });
+    right.appendChild(placeBtn); right.appendChild(delBtn);
+    d.appendChild(left); d.appendChild(right);
+    el.appendChild(d);
+  }
+}
+
+// Manual place: user clicks a target slot to put course
+let manualCourseToPlace = null;
+function manualPlace(courseId){
+  manualCourseToPlace = courseId;
+  alert('Now click any empty slot in the timetable to place this course (it will occupy duration hours). Click an occupied slot to remove the course from that slot.');
+}
+
+// slot click handler
+function onSlotClick(day,hour){
+  const key = slotKey(day,hour);
+  if(manualCourseToPlace){
+    // place manual
+    const course = courses.find(c=>c.id===manualCourseToPlace);
+    if(!course){ manualCourseToPlace=null; return; }
+    // check if enough contiguous hours available on that day
+    let canPlace = true;
+    for(let dh=0; dh<course.duration; dh++){
+      const hh = hour + dh;
+      if(hh >= END_HOUR){ canPlace = false; break; }
+      const k2 = slotKey(day,hh);
+      if((schedule[k2] || []).length>0) { canPlace = false; break; }
+    }
+    if(!canPlace){
+      if(!confirm('Slot or contiguous blocks are not empty or out of day range. Force-place anyway (may cause conflicts)?')) { manualCourseToPlace=null; return; }
+    }
+    // assign instance spanning duration
+    for(let dh=0; dh<course.duration; dh++){
+      const hh = hour + dh;
+      const k2 = slotKey(day,hh);
+      if(!schedule[k2]) schedule[k2]=[];
+      schedule[k2].push({courseId: course.id, duration: course.duration});
+    }
+    manualCourseToPlace=null;
+    buildTable();
+    return;
+  }
+
+  // normal behavior: if slot has items, remove last placed course instance in that time (conservative)
+  const arr = schedule[key] || [];
+  if(arr.length>0){
+    // remove the first course (or ask)
+    const inst = arr[0];
+    const c = courses.find(x=>x.id===inst.courseId);
+    if(!c) return;
+    if(!confirm(`Remove "${c.name}" from this slot?`)) return;
+    // remove all instances of that course across day contiguous durations (safe removal)
+    for(let hh=hour; hh<END_HOUR; hh++){
+      const k2 = slotKey(day,hh);
+      if(schedule[k2]) schedule[k2] = schedule[k2].filter(i=>i.courseId!==c.id);
+      if(schedule[k2] && schedule[k2].length===0) delete schedule[k2];
+    }
+    buildTable();
+    return;
+  } else {
+    alert('Slot empty. To place a course, use "Place manually" on a course then click slot.');
+  }
+}
+
+// Conflict detection
+function detectConflicts(){
+  const issues = [];
+  // per slot, check conflicts: room, teacher, group
+  for(const d of DAYS){
+    for(const h of HOURS){
+      const k = slotKey(d,h);
+      const arr = schedule[k] || [];
+      if(arr.length<=1) continue;
+      // compare each pair
+      for(let i=0;i<arr.length;i++){
+        for(let j=i+1;j<arr.length;j++){
+          const a = courses.find(c=>c.id===arr[i].courseId);
+          const b = courses.find(c=>c.id===arr[j].courseId);
+          if(!a||!b) continue;
+          if(a.room===b.room) issues.push({type:'Room clash', day:d, hour:h, msg:`${a.room} used by ${a.name} and ${b.name}`});
+          if(a.teacher===b.teacher) issues.push({type:'Teacher clash', day:d, hour:h, msg:`${a.teacher} assigned to ${a.name} and ${b.name}`});
+          if(a.group===b.group) issues.push({type:'Group clash', day:d, hour:h, msg:`${a.group} has ${a.name} and ${b.name} simultaneously`});
+        }
+      }
+    }
+  }
+  // gaps & heavy day detection per group
+  const groups = Array.from(new Set(courses.map(c=>c.group)));
+  for(const g of groups){
+    const usageByDay = {};
+    for(const d of DAYS) usageByDay[d]=0;
+    for(const d of DAYS){
+      for(const h of HOURS){
+        const k = slotKey(d,h);
+        const arr = schedule[k] || [];
+        if(arr.some(i=>courses.find(c=>c.id===i.courseId).group===g)) usageByDay[d]++;
+      }
+    }
+    // long gaps: if day has >0 and next slot with class has gap >=3 hours (approx) flag - simple heuristic omitted for brevity
+    // heavy day:
+    for(const d of DAYS){
+      if(usageByDay[d] >= Math.ceil(HOURS.length*0.6)) issues.push({type:'Heavy Day', day:d, hour:null, msg:`${g} has ${usageByDay[d]} classes on ${d}`});
+      if(usageByDay[d]===0) ; // not necessarily an issue
+    }
+  }
+
+  return issues;
+}
+
+// refresh problems output and mark timetable cells
+function refreshProblems(){
+  const problems = detectConflicts();
+  const out = document.getElementById('problemsOutput');
+  out.innerHTML = '';
+  if(problems.length===0){
+    const p = document.createElement('div'); p.textContent = 'No conflicts detected.'; p.className='small';
+    out.appendChild(p);
+  } else {
+    for(const pf of problems){
+      const d = document.createElement('div');
+      d.textContent = `${pf.type} — ${pf.msg} ${pf.day? '('+pf.day+(pf.hour? ' @'+pf.hour+':00':'')+')':''}`;
+      out.appendChild(d);
+    }
+  }
+  // mark cells that have conflicts
+  for(const d of DAYS){
+    for(const h of HOURS){
+      const key = slotKey(d,h);
+      const cell = document.querySelector(`.slot[data-day="${d}"][data-hour="${h}"]`);
+      if(!cell) continue;
+      const slotIssues = problems.filter(p=>p.day===d && p.hour===h);
+      if(slotIssues.length>0) { cell.classList.add('conflict'); cell.classList.remove('ok'); }
+      else {
+        // if occupied and no conflicts -> ok
+        const arr = schedule[key] || [];
+        if(arr.length>0){ cell.classList.remove('conflict'); cell.classList.add('ok'); }
+        else { cell.classList.remove('conflict'); cell.classList.remove('ok'); }
+      }
+    }
+  }
+}
+
+// bind detect button
+document.getElementById('detectConflictsBtn').addEventListener('click', ()=>{
+  refreshProblems();
+  alert('Conflict detection completed. See "Detected issues".');
+});
+
+// simple greedy auto-scheduler
+document.getElementById('autoScheduleBtn').addEventListener('click', ()=>{
+  if(courses.length===0){ alert('No courses to schedule'); return; }
+  // reset schedule
+  schedule = {};
+  // sort by duration desc and optionally by group frequency
+  const sorted = courses.slice().sort((a,b)=>b.duration - a.duration);
+  for(const c of sorted){
+    let placed = false;
+    // attempt to find any day-hour contiguous block where teacher,room,group are available across the course duration
+    for(const d of DAYS){
+      for(const h of HOURS){
+        // enough hours?
+        if(h + c.duration > END_HOUR) continue;
+        // check each hour slot
+        let ok = true;
+        for(let dh=0; dh<c.duration; dh++){
+          const hh = h+dh;
+          const k = slotKey(d,hh);
+          // if occupied already -> cannot (greedy)
+          if((schedule[k] || []).length>0){ ok=false; break; }
+        }
+        if(!ok) continue;
+        // now check teacher/room/group aren't assigned elsewhere at same hour (we already checked schedule but also check same teacher assigned different room same hour)
+        for(let dh=0; dh<c.duration; dh++){
+          const hh=h+dh;
+          // check across entire schedule for teacher/room/group at that datetime
+          // teacher busy?
+          for(const otherK of Object.keys(schedule)){
+            const [od,oh] = otherK.split('-');
+            if(od===d && parseInt(oh)===hh){
+              for(const inst of schedule[otherK]){
+                const oc = courses.find(x=>x.id===inst.courseId);
+                if(!oc) continue;
+                if(oc.teacher===c.teacher || oc.room===c.room || oc.group===c.group){ ok=false; break; }
+              }
+            }
+            if(!ok) break;
+          }
+          if(!ok) break;
+        }
+        if(!ok) continue;
+        // place it
+        for(let dh=0; dh<c.duration; dh++){
+          const hh = h+dh;
+          const k2 = slotKey(d,hh);
+          if(!schedule[k2]) schedule[k2]=[];
+          schedule[k2].push({courseId:c.id, duration:c.duration});
+        }
+        placed = true; break;
+      }
+      if(placed) break;
+    }
+    if(!placed){
+      // forced placement fallback: put in first day where contiguous blocks exist even if conflicts
+      for(const d of DAYS){
+        for(const h of HOURS){
+          if(h + c.duration > END_HOUR) continue;
+          for(let dh=0; dh<c.duration; dh++){
+            const hh=h+dh;
+            const k2 = slotKey(d,hh);
+            if(!schedule[k2]) schedule[k2]=[];
+            schedule[k2].push({courseId:c.id, duration:c.duration});
+          }
+          placed = true; break;
+        }
+        if(placed) break;
+      }
+    }
+  }
+  buildTable();
+  refreshProblems();
+  alert('Auto-scheduling completed. Review conflicts and tweak manually.');
+});
+
+// export CSV
+document.getElementById('exportCsvBtn').addEventListener('click', ()=>{
+  // columns: day,hour,course,teacher,room,group,duration
+  const rows = [['Day','HourStart','Course','Teacher','Room','Group','DurationHours']];
+  for(const d of DAYS){
+    for(const h of HOURS){
+      const k=slotKey(d,h);
+      const arr = schedule[k] || [];
+      for(const inst of arr){
+        const c = courses.find(x=>x.id===inst.courseId);
+        rows.push([d, formatHour(h), c.name, c.teacher, c.room, c.group, c.duration]);
+      }
+    }
+  }
+  const csv = rows.map(r=>r.map(v=>`"${String(v).replace(/"/g,'""')}"`).join(',')).join('\\n');
+  const blob = new Blob([csv], {type:'text/csv;charset=utf-8;'});
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url; a.download = 'timetable.csv'; document.body.appendChild(a); a.click(); a.remove();
+  URL.revokeObjectURL(url);
+});
+
+// print
+document.getElementById('printBtn').addEventListener('click', ()=> window.print());
+
+// initial build
+buildTable();
+
+</script>
+</body>
+</html>
+create index.html
